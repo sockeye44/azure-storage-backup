@@ -65,52 +65,58 @@ AzureStorage.prototype.listContainers = () => {
 AzureStorage.prototype.listBlobs = container => {
 	// console.log (container);
 	return new Promise((resolve, reject) => {
-		self._azureBlobService.listBlobsSegmented(container, null, (err, blobs, response) => {
-			if (err) {
-				reject(err);
-			} else if (response && response.body) {
-				const {
-					EnumerationResults: {
-						Blobs: {
-							Blob
+		function recurse(token) {
+			self._azureBlobService.listBlobsSegmented(container, token, (err, blobs, response) => {
+				if (err) {
+					reject(err);
+				} else if (response && response.body) {
+					const {
+						EnumerationResults: {
+							Blobs: {
+								Blob
+							}
 						}
-					}
-				} = response.body;
-
-				// console.log (Blob);listBlobs
-
-				let blobNames = [];
-				if (Blob && typeof Blob.length == 'number') {
-					// array -> contains more than one blob
-					Blob.forEach((blob, index) => {
-						let URL = self._azureBlobService.getUrl(container, blob.Name, null, self.config.source.serviceEndpoint) + self.config.source.sasServiceParams;
+					} = response.body;
+					// console.log (Blob);listBlobs
+					// console.log(blobs.continuationToken)
+					let blobNames = [];
+					if (Blob && typeof Blob.length == 'number') {
+						// array -> contains more than one blob
+						Blob.forEach((blob, index) => {
+							let URL = self._azureBlobService.getUrl(container, blob.Name, null, self.config.source.serviceEndpoint) + self.config.source.sasServiceParams;
+							if (URL) {
+								blobNames.push({
+									name: blob.Name,
+									URL: URL
+								});
+							}
+							if (index == Blob.length - 1) {
+								if (blobs.continuationToken) {
+									recurse(blobs.continuationToken);
+								} else {
+									resolve(blobNames);
+								}
+							}
+						});
+					} else if (Blob) {
+						let URL = self._azureBlobService.getUrl(container, Blob.Name, null, self.config.source.serviceEndpoint) + self.config.source.sasServiceParams;
 						if (URL) {
 							blobNames.push({
-								name: blob.Name,
+								name: Blob.Name,
 								URL: URL
 							});
 						}
-						if (index == Blob.length - 1) {
-							resolve(blobNames);
-						}
-					});
-				} else if (Blob) {
-					let URL = self._azureBlobService.getUrl(container, Blob.Name, null, self.config.source.serviceEndpoint) + self.config.source.sasServiceParams;
-					if (URL) {
-						blobNames.push({
-							name: Blob.Name,
-							URL: URL
-						});
+						resolve(blobNames);
+					} else {
+						// console.log('resolved blob names');
+						resolve(blobNames);
 					}
-					resolve(blobNames);
 				} else {
-					// console.log('resolved blob names');
-					resolve(blobNames);
+					reject('no response');
 				}
-			} else {
-				reject('no response');
-			}
-		})
+			})
+		};
+		recurse(null);
 	});
 };
 
